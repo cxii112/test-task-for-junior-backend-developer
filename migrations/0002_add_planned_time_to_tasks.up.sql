@@ -1,0 +1,4 @@
+ALTER TABLE tasks
+    ADD COLUMN start_at TIMESTAMPTZ;
+ALTER TABLE tasks
+    ADD COLUMN deadline TIMESTAMPTZ;
