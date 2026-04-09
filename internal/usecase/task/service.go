@@ -35,6 +35,15 @@ func (s *Service) Create(ctx context.Context, input CreateInput) (*taskdomain.Ta
 	now := s.now()
 	model.CreatedAt = now
 	model.UpdatedAt = now
+	if normalized.StartAt == nil {
+		model.StartAt = &now
+	}
+	if normalized.StartAt != nil {
+		model.StartAt = normalized.StartAt
+	}
+	if normalized.Deadline != nil {
+		model.Deadline = normalized.Deadline
+	}
 
 	created, err := s.repo.Create(ctx, model)
 	if err != nil {
@@ -106,6 +115,23 @@ func validateCreateInput(input CreateInput) (CreateInput, error) {
 		return CreateInput{}, fmt.Errorf("%w: invalid status", ErrInvalidInput)
 	}
 
+	if input.StartAt == nil {
+		input.Deadline = nil
+		return input, nil
+	}
+
+	if input.Deadline == nil {
+		return input, nil
+	}
+
+	startAt := input.StartAt.UTC()
+	deadline := input.Deadline.UTC()
+	if startAt.After(deadline) {
+		return CreateInput{}, fmt.Errorf("%w: deadline must be after start time", ErrInvalidInput)
+	}
+	input.StartAt = &startAt
+	input.Deadline = &deadline
+
 	return input, nil
 }
 
@@ -121,5 +147,21 @@ func validateUpdateInput(input UpdateInput) (UpdateInput, error) {
 		return UpdateInput{}, fmt.Errorf("%w: invalid status", ErrInvalidInput)
 	}
 
+	if input.StartAt == nil {
+		input.Deadline = nil
+		return input, nil
+	}
+
+	if input.Deadline == nil {
+		return input, nil
+	}
+
+	startAt := input.StartAt.UTC()
+	deadline := input.Deadline.UTC()
+	if startAt.After(deadline) {
+		return UpdateInput{}, fmt.Errorf("%w: deadline must be after start time", ErrInvalidInput)
+	}
+	input.StartAt = &startAt
+	input.Deadline = &deadline
 	return input, nil
 }
