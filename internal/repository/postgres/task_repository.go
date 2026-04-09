@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -20,12 +21,20 @@ func New(pool *pgxpool.Pool) *Repository {
 
 func (r *Repository) Create(ctx context.Context, task *taskdomain.Task) (*taskdomain.Task, error) {
 	const query = `
-		INSERT INTO tasks (title, description, status, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5)
-		RETURNING id, title, description, status, created_at, updated_at
+		INSERT INTO tasks (title, description, status, created_at, updated_at, start_at, deadline)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		RETURNING id, title, description, status, created_at, updated_at, start_at, deadline
 	`
 
-	row := r.pool.QueryRow(ctx, query, task.Title, task.Description, task.Status, task.CreatedAt, task.UpdatedAt)
+	row := r.pool.QueryRow(ctx, query,
+		task.Title,
+		task.Description,
+		task.Status,
+		task.CreatedAt,
+		task.UpdatedAt,
+		task.StartAt,
+		task.Deadline,
+	)
 	created, err := scanTask(row)
 	if err != nil {
 		return nil, err
@@ -36,7 +45,7 @@ func (r *Repository) Create(ctx context.Context, task *taskdomain.Task) (*taskdo
 
 func (r *Repository) GetByID(ctx context.Context, id int64) (*taskdomain.Task, error) {
 	const query = `
-		SELECT id, title, description, status, created_at, updated_at
+		SELECT id, title, description, status, created_at, updated_at, start_at, deadline
 		FROM tasks
 		WHERE id = $1
 	`
@@ -60,12 +69,21 @@ func (r *Repository) Update(ctx context.Context, task *taskdomain.Task) (*taskdo
 		SET title = $1,
 			description = $2,
 			status = $3,
-			updated_at = $4
-		WHERE id = $5
-		RETURNING id, title, description, status, created_at, updated_at
+			updated_at = $4,
+			start_at = $5,
+			deadline = $6
+		WHERE id = $7
+		RETURNING id, title, description, status, created_at, updated_at, start_at, deadline
 	`
 
-	row := r.pool.QueryRow(ctx, query, task.Title, task.Description, task.Status, task.UpdatedAt, task.ID)
+	row := r.pool.QueryRow(ctx, query,
+		task.Title,
+		task.Description,
+		task.Status,
+		task.UpdatedAt,
+		task.StartAt,
+		task.UpdatedAt,
+		task.ID)
 	updated, err := scanTask(row)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -95,9 +113,9 @@ func (r *Repository) Delete(ctx context.Context, id int64) error {
 
 func (r *Repository) List(ctx context.Context) ([]taskdomain.Task, error) {
 	const query = `
-		SELECT id, title, description, status, created_at, updated_at
+		SELECT id, title, description, status, created_at, updated_at, start_at, deadline
 		FROM tasks
-		ORDER BY id DESC
+		ORDER BY start_at DESC NULLS LAST, id DESC
 	`
 
 	rows, err := r.pool.Query(ctx, query)
@@ -129,8 +147,10 @@ type taskScanner interface {
 
 func scanTask(scanner taskScanner) (*taskdomain.Task, error) {
 	var (
-		task   taskdomain.Task
-		status string
+		task     taskdomain.Task
+		status   string
+		start_at *time.Time
+		deadline *time.Time
 	)
 
 	if err := scanner.Scan(
@@ -140,11 +160,19 @@ func scanTask(scanner taskScanner) (*taskdomain.Task, error) {
 		&status,
 		&task.CreatedAt,
 		&task.UpdatedAt,
+		&start_at,
+		&deadline,
 	); err != nil {
 		return nil, err
 	}
 
 	task.Status = taskdomain.Status(status)
+	if start_at != nil {
+		task.StartAt = start_at
+	}
+	if deadline != nil {
+		task.Deadline = deadline
+	}
 
 	return &task, nil
 }

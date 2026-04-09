@@ -17,6 +17,11 @@ type Task struct {
 	Status      Status    `json:"status"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
+
+	// StartAt -- время начала задания. Если не установлено -- совпадает с CreatedAt
+	StartAt *time.Time `json:"start_at"`
+	// Deadline -- время до которого необходимо закончить задачу
+	Deadline *time.Time `json:"deadline"`
 }
 
 func (s Status) Valid() bool {

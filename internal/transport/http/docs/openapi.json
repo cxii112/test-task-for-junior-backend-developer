@@ -38,6 +38,7 @@
       "post": {
         "tags": ["Tasks"],
         "summary": "Create task",
+        "description": "Creates new task. If `deadline` sent it requires also send `start_at`. `deadline` (if defined) must be after `start_at`.",
         "requestBody": {
           "required": true,
           "content": {
@@ -86,6 +87,7 @@
       "put": {
         "tags": ["Tasks"],
         "summary": "Update task",
+        "description": "Updates existing task. If `deadline` sent it requires also send `start_at`. `deadline` (if defined) must be after `start_at`.",
         "parameters": [
           {
             "name": "id",
@@ -169,6 +171,16 @@
             "type": "string",
             "enum": ["new", "in_progress", "done"],
             "example": "new"
+          },
+          "start_at": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-03-24T00:00:00Z"
+          },
+          "deadline": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-03-24T00:01:00Z"
           }
         }
       },
@@ -188,6 +200,16 @@
             "type": "string",
             "enum": ["new", "in_progress", "done"],
             "example": "in_progress"
+          },
+          "start_at": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-03-24T00:00:00Z"
+          },
+          "deadline": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-03-24T00:01:00Z"
           }
         }
       },
@@ -211,6 +233,16 @@
             "example": "2026-03-24T00:00:00Z"
           },
           "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-03-24T00:00:00Z"
+          },
+          "start_at": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-03-24T00:00:00Z"
+          },
+          "deadline": {
             "type": "string",
             "format": "date-time",
             "example": "2026-03-24T00:00:00Z"
