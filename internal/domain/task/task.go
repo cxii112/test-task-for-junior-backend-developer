@@ -22,6 +22,13 @@ type Task struct {
 	StartAt *time.Time `json:"start_at"`
 	// Deadline -- время до которого необходимо закончить задачу
 	Deadline *time.Time `json:"deadline"`
+
+	// Schedule расписание для создания задач из мастер-задачи.
+	// Расписание изменяется только на мастер-задаче
+	Schedule *Schedule
+	// MasterTaskId идентификатор мастер-задачи.
+	// Если nil -- задача является мастер-задачей
+	MasterTaskId *int64
 }
 
 func (s Status) Valid() bool {
