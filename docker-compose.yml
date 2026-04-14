@@ -16,6 +16,7 @@ services:
       - postgres_data:/var/lib/postgresql/data
       - ./migrations/0001_create_tasks.up.sql:/docker-entrypoint-initdb.d/0001_create_tasks.sql:ro
       - ./migrations/0002_add_planned_time_to_tasks.up.sql:/docker-entrypoint-initdb.d/0002_add_planned_time_to_tasks.up.sql:ro
+      - ./migrations/0003_add_schedule_related_fields.up.sql:/docker-entrypoint-initdb.d/0003_add_schedule_related_fields.up.sql:ro
 
   app:
     build:

@@ -21,9 +21,9 @@ func New(pool *pgxpool.Pool) *Repository {
 
 func (r *Repository) Create(ctx context.Context, task *taskdomain.Task) (*taskdomain.Task, error) {
 	const query = `
-		INSERT INTO tasks (title, description, status, created_at, updated_at, start_at, deadline)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
-		RETURNING id, title, description, status, created_at, updated_at, start_at, deadline
+		INSERT INTO tasks (title, description, status, created_at, updated_at, start_at, deadline, master_task_id, schedule)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		RETURNING id, title, description, status, created_at, updated_at, start_at, deadline, master_task_id, schedule
 	`
 
 	row := r.pool.QueryRow(ctx, query,
@@ -34,6 +34,8 @@ func (r *Repository) Create(ctx context.Context, task *taskdomain.Task) (*taskdo
 		task.UpdatedAt,
 		task.StartAt,
 		task.Deadline,
+		task.MasterTaskId,
+		scheduleDAOFromModel(task.Schedule),
 	)
 	created, err := scanTask(row)
 	if err != nil {
@@ -45,7 +47,7 @@ func (r *Repository) Create(ctx context.Context, task *taskdomain.Task) (*taskdo
 
 func (r *Repository) GetByID(ctx context.Context, id int64) (*taskdomain.Task, error) {
 	const query = `
-		SELECT id, title, description, status, created_at, updated_at, start_at, deadline
+		SELECT id, title, description, status, created_at, updated_at, start_at, deadline, master_task_id, schedule
 		FROM tasks
 		WHERE id = $1
 	`
@@ -71,9 +73,11 @@ func (r *Repository) Update(ctx context.Context, task *taskdomain.Task) (*taskdo
 			status = $3,
 			updated_at = $4,
 			start_at = $5,
-			deadline = $6
-		WHERE id = $7
-		RETURNING id, title, description, status, created_at, updated_at, start_at, deadline
+			deadline = $6,
+			master_task_id = $7,
+			schedule = $8
+		WHERE id = $9
+		RETURNING id, title, description, status, created_at, updated_at, start_at, deadline, master_task_id, schedule
 	`
 
 	row := r.pool.QueryRow(ctx, query,
@@ -82,7 +86,9 @@ func (r *Repository) Update(ctx context.Context, task *taskdomain.Task) (*taskdo
 		task.Status,
 		task.UpdatedAt,
 		task.StartAt,
-		task.UpdatedAt,
+		task.Deadline,
+		task.MasterTaskId,
+		scheduleDAOFromModel(task.Schedule),
 		task.ID)
 	updated, err := scanTask(row)
 	if err != nil {
@@ -113,7 +119,7 @@ func (r *Repository) Delete(ctx context.Context, id int64) error {
 
 func (r *Repository) List(ctx context.Context) ([]taskdomain.Task, error) {
 	const query = `
-		SELECT id, title, description, status, created_at, updated_at, start_at, deadline
+		SELECT id, title, description, status, created_at, updated_at, start_at, deadline, master_task_id, schedule
 		FROM tasks
 		ORDER BY start_at DESC NULLS LAST, id DESC
 	`
@@ -147,10 +153,12 @@ type taskScanner interface {
 
 func scanTask(scanner taskScanner) (*taskdomain.Task, error) {
 	var (
-		task     taskdomain.Task
-		status   string
-		start_at *time.Time
-		deadline *time.Time
+		task         taskdomain.Task
+		status       string
+		start_at     *time.Time
+		deadline     *time.Time
+		masterTaskId *int64
+		schedule     *scheduleDAO
 	)
 
 	if err := scanner.Scan(
@@ -162,6 +170,8 @@ func scanTask(scanner taskScanner) (*taskdomain.Task, error) {
 		&task.UpdatedAt,
 		&start_at,
 		&deadline,
+		&masterTaskId,
+		&schedule,
 	); err != nil {
 		return nil, err
 	}
@@ -173,6 +183,56 @@ func scanTask(scanner taskScanner) (*taskdomain.Task, error) {
 	if deadline != nil {
 		task.Deadline = deadline
 	}
+	if masterTaskId != nil {
+		task.MasterTaskId = masterTaskId
+	}
+	if schedule != nil {
+		scheduleModel := scheduleModelFromDAO(schedule)
+		task.Schedule = scheduleModel
+	}
 
 	return &task, nil
+}
+
+type scheduleDAO struct {
+	SparseDates      []time.Time `json:"sparse_dates,omitempty"`
+	EveryNthDay      *int64      `json:"every_nth_day,omitempty"`
+	EveryNthMonthDay *int64      `json:"every_nth_monthday,omitempty"`
+	EveryEvenDay     *bool       `json:"every_even_day,omitempty"`
+}
+
+func scheduleModelFromDAO(dao *scheduleDAO) *taskdomain.Schedule {
+	if dao == nil {
+		return nil
+	}
+	scheduleModel := taskdomain.Schedule{}
+	switch {
+	case dao.EveryEvenDay != nil:
+		scheduleModel.EveryEvenDay = dao.EveryEvenDay
+	case dao.EveryNthDay != nil:
+		scheduleModel.EveryNthDay = dao.EveryNthDay
+	case dao.EveryNthMonthDay != nil:
+		scheduleModel.EveryNthMonthDay = dao.EveryNthMonthDay
+	case len(dao.SparseDates) > 0:
+		scheduleModel.SparseDates = dao.SparseDates
+	}
+	return &scheduleModel
+}
+
+func scheduleDAOFromModel(model *taskdomain.Schedule) *scheduleDAO {
+	if model == nil {
+		return nil
+	}
+	dao := scheduleDAO{}
+	switch {
+	case model.EveryEvenDay != nil:
+		dao.EveryEvenDay = model.EveryEvenDay
+	case model.EveryNthDay != nil:
+		dao.EveryNthDay = model.EveryNthDay
+	case model.EveryNthMonthDay != nil:
+		dao.EveryNthMonthDay = model.EveryNthMonthDay
+	case len(model.SparseDates) > 0:
+		dao.SparseDates = model.SparseDates
+	}
+	return &dao
 }
