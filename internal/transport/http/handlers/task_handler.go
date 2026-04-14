@@ -118,6 +118,76 @@ func (h *TaskHandler) List(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, response)
 }
 
+func (h *TaskHandler) GetChainByMasterID(w http.ResponseWriter, r *http.Request) {
+	id, err := getIDFromRequest(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+
+	chain, err := h.usecase.GetChainByMasterID(r.Context(), id)
+	if err != nil {
+		writeUsecaseError(w, err)
+		return
+	}
+	tasks := []taskDTO{}
+	for _, task := range chain {
+		dto := newTaskDTO(&task)
+		tasks = append(tasks, dto)
+	}
+	writeJSON(w, http.StatusCreated, tasks)
+}
+
+func (h *TaskHandler) CreateChainFromTask(w http.ResponseWriter, r *http.Request) {
+	id, err := getIDFromRequest(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	var req chainGenerationMutationDTO
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	genReq := generationInputFromDTO(&req)
+	chain, err := h.usecase.CreateChainFromTask(r.Context(), id, *genReq)
+	if err != nil {
+		writeUsecaseError(w, err)
+		return
+	}
+	tasks := []taskDTO{}
+	for _, task := range chain {
+		dto := newTaskDTO(&task)
+		tasks = append(tasks, dto)
+	}
+	writeJSON(w, http.StatusCreated, tasks)
+}
+
+func (h *TaskHandler) PropagateChain(w http.ResponseWriter, r *http.Request) {
+	id, err := getIDFromRequest(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	var req chainPropagationMutationDTO
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	propReq := propagationInputFromDTO(req)
+	chain, err := h.usecase.PropagateChain(r.Context(), id, propReq)
+	if err != nil {
+		writeUsecaseError(w, err)
+		return
+	}
+	tasks := []taskDTO{}
+	for _, task := range chain {
+		dto := newTaskDTO(&task)
+		tasks = append(tasks, dto)
+	}
+	writeJSON(w, http.StatusCreated, tasks)
+}
+
 func getIDFromRequest(r *http.Request) (int64, error) {
 	rawID := mux.Vars(r)["id"]
 	if rawID == "" {
@@ -195,4 +265,15 @@ func generationInputFromDTO(i *chainGenerationMutationDTO) *taskusecase.Generati
 	}
 	genReq.Schedule = scheduleReq
 	return &genReq
+}
+
+func propagationInputFromDTO(i chainPropagationMutationDTO) taskusecase.PropagationInput {
+	propReq := taskusecase.PropagationInput{}
+	if i.Start != nil {
+		propReq.Start = i.Start
+	}
+	if i.End != nil {
+		propReq.End = i.End
+	}
+	return propReq
 }

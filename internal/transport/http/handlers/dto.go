@@ -39,6 +39,11 @@ type chainGenerationMutationDTO struct {
 	End      *time.Time  `json:"end,omitempty"`
 }
 
+type chainPropagationMutationDTO struct {
+	Start *time.Time `json:"start,omitempty"`
+	End   *time.Time `json:"end,omitempty"`
+}
+
 type scheduleDTO struct {
 	// SparseDates создать задачи только в указанные даты
 	SparseDates []time.Time `json:"sparse_dates,omitempty"`
