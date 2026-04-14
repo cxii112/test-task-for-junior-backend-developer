@@ -32,6 +32,7 @@ type Usecase interface {
 	GetChainByMasterID(ctx context.Context, id int64) ([]taskdomain.Task, error)
 	CreateChainFromTask(ctx context.Context, id int64, input GenerationInput) ([]taskdomain.Task, error)
 	PropagateChain(ctx context.Context, id int64, input PropagationInput) ([]taskdomain.Task, error)
+	UpdateChain(ctx context.Context, id int64, input UpdateChainInput) ([]taskdomain.Task, error)
 }
 
 type CreateInput struct {
@@ -71,4 +72,9 @@ type ScheduleInput struct {
 type PropagationInput struct {
 	Start *time.Time
 	End   *time.Time
+}
+
+type UpdateChainInput struct {
+	Title       string
+	Description string
 }

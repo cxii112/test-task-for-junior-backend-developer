@@ -188,6 +188,35 @@ func (h *TaskHandler) PropagateChain(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, tasks)
 }
 
+func (h *TaskHandler) UpdateChain(w http.ResponseWriter, r *http.Request) {
+	id, err := getIDFromRequest(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+
+	var req taskMutationDTO
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+
+	updated, err := h.usecase.UpdateChain(r.Context(), id, taskusecase.UpdateChainInput{
+		Title:       req.Title,
+		Description: req.Description,
+	})
+	if err != nil {
+		writeUsecaseError(w, err)
+		return
+	}
+	tasks := []taskDTO{}
+	for _, task := range updated {
+		dto := newTaskDTO(&task)
+		tasks = append(tasks, dto)
+	}
+	writeJSON(w, http.StatusCreated, tasks)
+}
+
 func getIDFromRequest(r *http.Request) (int64, error) {
 	rawID := mux.Vars(r)["id"]
 	if rawID == "" {
