@@ -42,7 +42,7 @@
       "post": {
         "tags": ["Tasks"],
         "summary": "Create task",
-        "description": "Creates a new task. If `deadline` is sent, `start_at` is also required. `deadline` must be after `start_at`.\n\nIf `chain_generation` is provided:\n- For **non‑sparse** schedules (`every_nth_day`, `every_nth_monthday`, `every_even_day`): a master task is created and a chain of recurring tasks is generated. The response contains the master task.\n- For `sparse_dates` schedule: **no master task is created**; only the generated tasks are stored. The response contains the **first** generated task.",
+        "description": "Creates a new task. If `deadline` is sent, `start_at` is also required. `deadline` must be after `start_at`.\n\nIf `chain_generation` is provided, the created task becomes a **master task** with the given schedule, and a chain of recurring tasks is generated according to the schedule. The response contains the master task (the generated chain is stored but not returned directly).",
         "requestBody": {
           "required": true,
           "content": {
@@ -53,7 +53,7 @@
         },
         "responses": {
           "201": {
-            "description": "Task created (master task or first generated task for sparse_dates)",
+            "description": "Task created (master task)",
             "content": {
               "application/json": {
                 "schema": { "$ref": "#/components/schemas/Task" }
@@ -91,7 +91,7 @@
       "put": {
         "tags": ["Tasks"],
         "summary": "Update task",
-        "description": "Updates an existing task. If `deadline` is sent, `start_at` is also required. `deadline` must be after `start_at`.\n\nSetting `make_standalone` to `true` removes the link to the master task, turning this task into a standalone task.\n\n**Note:**Changing `start_at` or `deadline` will break the link to the master task (the task becomes standalone).\n\nThis endpoint cannot change the task's schedule.\n\nOnly tasks with `status = new` in the chain are affected by changes (title/description updates are propagated to them automatically on master update).",
+        "description": "Updates an existing task. If `deadline` is sent, `start_at` is also required. `deadline` must be after `start_at`.\n\n**Important:** Changing `start_at` or `deadline` will break the link to the master task (the task becomes standalone).\n\nSetting `make_standalone` to `true` explicitly removes the link to the master task.\n\nIf the task is a master task (has a schedule), updating its `title` or `description` will automatically propagate these changes to all dependent tasks with `status = new` in its chain.\n\nThis endpoint cannot change the task's schedule.",
         "parameters": [
           {
             "name": "id",
@@ -169,7 +169,7 @@
       "post": {
         "tags": ["Task Chains"],
         "summary": "Generate chain from a task",
-        "description": "Turns an existing task into a master task and generates a chain of recurring tasks based on the provided schedule. The original task is updated to become the master (its `master_task_id` is set to NULL).\n\nIf the task is already part of a chain, the request fails unless the chain consists only of the task itself (i.e., no dependent tasks exist).\n\n**Note:** `sparse_dates` keeps original task unlike in creation of single task with chain.",
+        "description": "Turns an existing task into a master task and generates a chain of recurring tasks based on the provided schedule. The original task is updated to become the master (its `master_task_id` is set to NULL and the schedule is attached).\n\nIf the task is already part of a chain (i.e., it has dependent tasks), the request fails unless the chain consists only of the task itself.\n\nThis endpoint works uniformly for all schedule types (including `sparse_dates`).",
         "parameters": [
           {
             "name": "id",

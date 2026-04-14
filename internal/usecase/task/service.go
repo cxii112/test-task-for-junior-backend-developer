@@ -75,19 +75,6 @@ func (s *Service) Create(ctx context.Context, input CreateInput) (*taskdomain.Ta
 	}
 	model.Schedule = schedule
 
-	if len(normalized.Generation.Schedule.SparseDates) > 0 {
-		chain := taskdomain.NewChainFromMaster(
-			model,
-			*schedule,
-			opts,
-		)
-		bulk, err := s.repo.CreateBulk(ctx, chain)
-		if err != nil {
-			return nil, err
-		}
-		return &bulk[0], nil
-	}
-
 	created, err := s.repo.Create(ctx, &model)
 	if err != nil {
 		return nil, err
