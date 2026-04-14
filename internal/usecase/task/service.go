@@ -27,25 +27,77 @@ func (s *Service) Create(ctx context.Context, input CreateInput) (*taskdomain.Ta
 		return nil, err
 	}
 
-	model := &taskdomain.Task{
-		Title:       normalized.Title,
-		Description: normalized.Description,
-		Status:      normalized.Status,
-	}
 	now := s.now()
-	model.CreatedAt = now
-	model.UpdatedAt = now
-	if normalized.StartAt == nil {
-		model.StartAt = &now
-	}
-	if normalized.StartAt != nil {
-		model.StartAt = normalized.StartAt
-	}
-	if normalized.Deadline != nil {
-		model.Deadline = normalized.Deadline
+
+	var schedule *taskdomain.Schedule
+	var opts *taskdomain.GenerationOptions
+	if normalized.Generation != nil {
+		schedule = &taskdomain.Schedule{}
+		switch {
+		case normalized.Generation.Schedule.SparseDates != nil:
+			schedule.SparseDates = normalized.Generation.Schedule.SparseDates
+		case normalized.Generation.Schedule.EveryEvenDay != nil:
+			schedule.EveryEvenDay = normalized.Generation.Schedule.EveryEvenDay
+		case normalized.Generation.Schedule.EveryNthDay != nil:
+			schedule.EveryNthDay = normalized.Generation.Schedule.EveryNthDay
+		case normalized.Generation.Schedule.EveryNthMonthDay != nil:
+			schedule.EveryNthMonthDay = normalized.Generation.Schedule.EveryNthMonthDay
+		}
+		opts = &taskdomain.GenerationOptions{
+			Now:            now,
+			WorkdayChecker: taskdomain.DefaultWorkdayChecker,
+		}
+		if normalized.Generation.Start != nil {
+			opts.GenerationStart = normalized.Generation.Start
+		} else {
+			opts.GenerationStart = &now
+		}
+		if normalized.Generation.End != nil {
+			opts.GenerationEnd = normalized.Generation.End
+		}
 	}
 
-	created, err := s.repo.Create(ctx, model)
+	model := taskdomain.NewSingle(
+		normalized.Title,
+		normalized.Description,
+		normalized.Status,
+		normalized.StartAt,
+		normalized.Deadline,
+		&taskdomain.GenerationOptions{
+			Now:            now,
+			WorkdayChecker: taskdomain.DefaultWorkdayChecker,
+		},
+	)
+
+	if schedule == nil {
+		return s.repo.Create(ctx, &model)
+	}
+	model.Schedule = schedule
+
+	if len(normalized.Generation.Schedule.SparseDates) > 0 {
+		chain := taskdomain.NewChainFromMaster(
+			model,
+			*schedule,
+			opts,
+		)
+		bulk, err := s.repo.CreateBulk(ctx, chain)
+		if err != nil {
+			return nil, err
+		}
+		return &bulk[0], nil
+	}
+
+	created, err := s.repo.Create(ctx, &model)
+	if err != nil {
+		return nil, err
+	}
+
+	chain := taskdomain.NewChainFromMaster(
+		*created,
+		*schedule,
+		opts,
+	)
+	_, err = s.repo.CreateBulk(ctx, chain)
 	if err != nil {
 		return nil, err
 	}
@@ -66,6 +118,11 @@ func (s *Service) Update(ctx context.Context, id int64, input UpdateInput) (*tas
 		return nil, fmt.Errorf("%w: id must be positive", ErrInvalidInput)
 	}
 
+	target, err := s.repo.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+
 	normalized, err := validateUpdateInput(input)
 	if err != nil {
 		return nil, err
@@ -77,6 +134,39 @@ func (s *Service) Update(ctx context.Context, id int64, input UpdateInput) (*tas
 		Description: normalized.Description,
 		Status:      normalized.Status,
 		UpdatedAt:   s.now(),
+	}
+	if target.MasterTaskId != nil {
+		model.MasterTaskId = target.MasterTaskId
+	}
+	if target.Schedule != nil {
+		model.Schedule = target.Schedule
+	}
+	if normalized.MakeStandalone {
+		model.MasterTaskId = nil
+	}
+
+	if normalized.StartAt == nil {
+		// для старых клиентов
+		model.StartAt = target.StartAt
+	} else {
+		model.StartAt = normalized.StartAt
+	}
+	if normalized.Deadline == nil {
+		// для старых клиентов
+		model.Deadline = target.Deadline
+	} else {
+		model.Deadline = normalized.Deadline
+	}
+
+	if normalized.StartAt != nil && target.StartAt != nil &&
+		normalized.StartAt.Sub(*target.StartAt).Abs() > time.Second {
+		model.MasterTaskId = nil
+
+	}
+	if normalized.Deadline != nil && target.Deadline != nil &&
+		normalized.Deadline.Sub(*target.Deadline).Abs() > time.Second {
+		model.MasterTaskId = nil
+
 	}
 
 	updated, err := s.repo.Update(ctx, model)
@@ -208,7 +298,6 @@ func validateUpdateInput(input UpdateInput) (UpdateInput, error) {
 		return input, nil
 	}
 
-	startAt := input.StartAt.UTC()
 	deadline := input.Deadline.UTC()
 	if startAt.After(deadline) {
 		return UpdateInput{}, fmt.Errorf("%w: deadline must be after start time", ErrInvalidInput)
