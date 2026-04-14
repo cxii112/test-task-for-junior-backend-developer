@@ -216,92 +216,6 @@ func (s *Service) GetChainByMasterID(ctx context.Context, id int64) ([]taskdomai
 	return s.repo.GetByMasterID(ctx, id)
 }
 
-func validateCreateInput(input CreateInput) (CreateInput, error) {
-	input.Title = strings.TrimSpace(input.Title)
-	input.Description = strings.TrimSpace(input.Description)
-
-	if input.Title == "" {
-		return CreateInput{}, fmt.Errorf("%w: title is required", ErrInvalidInput)
-	}
-
-	if input.Status == "" {
-		input.Status = taskdomain.StatusNew
-	}
-
-	if !input.Status.Valid() {
-		return CreateInput{}, fmt.Errorf("%w: invalid status", ErrInvalidInput)
-	}
-
-	if input.StartAt == nil {
-		input.Deadline = nil
-		return input, nil
-	}
-
-	if input.Deadline == nil {
-		return input, nil
-	}
-
-	startAt := input.StartAt.UTC()
-	deadline := input.Deadline.UTC()
-	if startAt.After(deadline) {
-		return CreateInput{}, fmt.Errorf("%w: deadline must be after start time", ErrInvalidInput)
-	}
-	input.StartAt = &startAt
-	input.Deadline = &deadline
-
-	if input.Generation == nil {
-		return input, nil
-	}
-
-	if input.Generation.End != nil && input.Generation.Start != nil &&
-		input.Generation.End.Before(*input.Generation.Start) {
-		return CreateInput{}, fmt.Errorf("%w: generation end time must be after start time", ErrInvalidInput)
-	}
-	if input.Generation.Start != nil {
-		s := input.Generation.Start.UTC()
-		input.Generation.Start = &s
-	}
-	if input.Generation.End != nil {
-		e := input.Generation.End.UTC()
-		input.Generation.End = &e
-	}
-
-	fieldsCount := 0
-	if len(input.Generation.Schedule.SparseDates) > 0 {
-		fieldsCount += 1
-	}
-	if input.Generation.Schedule.EveryEvenDay != nil {
-		fieldsCount += 1
-	}
-	if input.Generation.Schedule.EveryNthDay != nil {
-		fieldsCount += 1
-	}
-	if input.Generation.Schedule.EveryNthMonthDay != nil {
-		fieldsCount += 1
-	}
-	if fieldsCount > 1 {
-		return CreateInput{}, fmt.Errorf("%w: schedule input field are mutualy exclusive", ErrInvalidInput)
-	}
-	switch {
-	case input.Generation.Schedule.SparseDates != nil:
-		dates := map[int64]struct{}{}
-		for _, date := range input.Generation.Schedule.SparseDates {
-			unixDate := date.Unix()
-			_, exists := dates[unixDate]
-			if exists {
-				return CreateInput{}, fmt.Errorf("%w: scheduled sparse dates must be unique", ErrInvalidInput)
-			}
-			dates[unixDate] = struct{}{}
-		}
-	case input.Generation.Schedule.EveryNthMonthDay != nil:
-		if *input.Generation.Schedule.EveryNthMonthDay > 31 {
-			return CreateInput{}, fmt.Errorf("%w: scheduled every Nth month day must be in range from 1 to 31 inclusive", ErrInvalidInput)
-		}
-	}
-
-	return input, nil
-}
-
 func (s *Service) CreateChainFromTask(ctx context.Context, id int64, input GenerationInput) ([]taskdomain.Task, error) {
 	if id <= 0 {
 		return nil, fmt.Errorf("%w: id must be positive", ErrInvalidInput)
@@ -424,6 +338,92 @@ func (s *Service) PropagateChain(ctx context.Context, id int64, input Propagatio
 	}
 	chain = append(chain, added...)
 	return chain, nil
+}
+
+func validateCreateInput(input CreateInput) (CreateInput, error) {
+	input.Title = strings.TrimSpace(input.Title)
+	input.Description = strings.TrimSpace(input.Description)
+
+	if input.Title == "" {
+		return CreateInput{}, fmt.Errorf("%w: title is required", ErrInvalidInput)
+	}
+
+	if input.Status == "" {
+		input.Status = taskdomain.StatusNew
+	}
+
+	if !input.Status.Valid() {
+		return CreateInput{}, fmt.Errorf("%w: invalid status", ErrInvalidInput)
+	}
+
+	if input.StartAt == nil {
+		input.Deadline = nil
+		return input, nil
+	}
+
+	if input.Deadline == nil {
+		return input, nil
+	}
+
+	startAt := input.StartAt.UTC()
+	deadline := input.Deadline.UTC()
+	if startAt.After(deadline) {
+		return CreateInput{}, fmt.Errorf("%w: deadline must be after start time", ErrInvalidInput)
+	}
+	input.StartAt = &startAt
+	input.Deadline = &deadline
+
+	if input.Generation == nil {
+		return input, nil
+	}
+
+	if input.Generation.End != nil && input.Generation.Start != nil &&
+		input.Generation.End.Before(*input.Generation.Start) {
+		return CreateInput{}, fmt.Errorf("%w: generation end time must be after start time", ErrInvalidInput)
+	}
+	if input.Generation.Start != nil {
+		s := input.Generation.Start.UTC()
+		input.Generation.Start = &s
+	}
+	if input.Generation.End != nil {
+		e := input.Generation.End.UTC()
+		input.Generation.End = &e
+	}
+
+	fieldsCount := 0
+	if len(input.Generation.Schedule.SparseDates) > 0 {
+		fieldsCount += 1
+	}
+	if input.Generation.Schedule.EveryEvenDay != nil {
+		fieldsCount += 1
+	}
+	if input.Generation.Schedule.EveryNthDay != nil {
+		fieldsCount += 1
+	}
+	if input.Generation.Schedule.EveryNthMonthDay != nil {
+		fieldsCount += 1
+	}
+	if fieldsCount > 1 {
+		return CreateInput{}, fmt.Errorf("%w: schedule input field are mutualy exclusive", ErrInvalidInput)
+	}
+	switch {
+	case input.Generation.Schedule.SparseDates != nil:
+		dates := map[int64]struct{}{}
+		for _, date := range input.Generation.Schedule.SparseDates {
+			unixDate := date.Unix()
+			_, exists := dates[unixDate]
+			if exists {
+				return CreateInput{}, fmt.Errorf("%w: scheduled sparse dates must be unique", ErrInvalidInput)
+			}
+			dates[unixDate] = struct{}{}
+		}
+	case input.Generation.Schedule.EveryNthMonthDay != nil:
+		if *input.Generation.Schedule.EveryNthMonthDay > 31 {
+			return CreateInput{}, fmt.Errorf("%w: scheduled every Nth month day must be in range from 1 to 31 inclusive", ErrInvalidInput)
+		}
+	}
+
+	return input, nil
 }
 
 func validateUpdateInput(input UpdateInput) (UpdateInput, error) {
