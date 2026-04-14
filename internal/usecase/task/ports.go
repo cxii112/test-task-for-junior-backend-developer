@@ -31,6 +31,8 @@ type CreateInput struct {
 
 	StartAt  *time.Time
 	Deadline *time.Time
+
+	Generation *GenerationInput
 }
 
 type UpdateInput struct {
@@ -38,6 +40,20 @@ type UpdateInput struct {
 	Description string
 	Status      taskdomain.Status
 
-	StartAt  *time.Time
-	Deadline *time.Time
+	StartAt        *time.Time
+	Deadline       *time.Time
+	MakeStandalone bool
+}
+
+type GenerationInput struct {
+	Schedule ScheduleInput
+	Start    *time.Time
+	End      *time.Time
+}
+
+type ScheduleInput struct {
+	SparseDates      []time.Time
+	EveryNthDay      *int64
+	EveryNthMonthDay *int64
+	EveryEvenDay     *bool
 }
