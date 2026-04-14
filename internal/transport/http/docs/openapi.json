@@ -3,7 +3,7 @@
   "info": {
     "title": "Task Service API",
     "version": "1.0.0",
-    "description": "CRUD API for tasks built with clean architecture."
+    "description": "CRUD API for tasks built with clean architecture. Supports task chains with recurrence schedules (every N-th day, every even/odd day, every N-th month day, sparse dates)."
   },
   "servers": [
     {
@@ -14,6 +14,10 @@
     {
       "name": "Tasks",
       "description": "Operations with tasks"
+    },
+    {
+      "name": "Task Chains",
+      "description": "Operations for generating and managing chains of tasks from a master task"
     }
   ],
   "paths": {
@@ -38,7 +42,7 @@
       "post": {
         "tags": ["Tasks"],
         "summary": "Create task",
-        "description": "Creates new task. If `deadline` sent it requires also send `start_at`. `deadline` (if defined) must be after `start_at`.",
+        "description": "Creates a new task. If `deadline` is sent, `start_at` is also required. `deadline` must be after `start_at`.\n\nIf `chain_generation` is provided:\n- For **non‑sparse** schedules (`every_nth_day`, `every_nth_monthday`, `every_even_day`): a master task is created and a chain of recurring tasks is generated. The response contains the master task.\n- For `sparse_dates` schedule: **no master task is created**; only the generated tasks are stored. The response contains the **first** generated task.",
         "requestBody": {
           "required": true,
           "content": {
@@ -49,7 +53,7 @@
         },
         "responses": {
           "201": {
-            "description": "Created task",
+            "description": "Task created (master task or first generated task for sparse_dates)",
             "content": {
               "application/json": {
                 "schema": { "$ref": "#/components/schemas/Task" }
@@ -87,7 +91,7 @@
       "put": {
         "tags": ["Tasks"],
         "summary": "Update task",
-        "description": "Updates existing task. If `deadline` sent it requires also send `start_at`. `deadline` (if defined) must be after `start_at`.",
+        "description": "Updates an existing task. If `deadline` is sent, `start_at` is also required. `deadline` must be after `start_at`.\n\nSetting `make_standalone` to `true` removes the link to the master task, turning this task into a standalone task.\n\n**Note:**Changing `start_at` or `deadline` will break the link to the master task (the task becomes standalone).\n\nThis endpoint cannot change the task's schedule.\n\nOnly tasks with `status = new` in the chain are affected by changes (title/description updates are propagated to them automatically on master update).",
         "parameters": [
           {
             "name": "id",
@@ -130,6 +134,107 @@
         ],
         "responses": {
           "204": { "description": "Deleted" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/api/v1/tasks/{id}/chain": {
+      "get": {
+        "tags": ["Task Chains"],
+        "summary": "Get task chain by master ID",
+        "description": "Returns all tasks that belong to the same chain as the given task (including the master task itself).",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer", "format": "int64", "minimum": 1 }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Task chain",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/Task" }
+                }
+              }
+            }
+          },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      },
+      "post": {
+        "tags": ["Task Chains"],
+        "summary": "Generate chain from a task",
+        "description": "Turns an existing task into a master task and generates a chain of recurring tasks based on the provided schedule. The original task is updated to become the master (its `master_task_id` is set to NULL).\n\nIf the task is already part of a chain, the request fails unless the chain consists only of the task itself (i.e., no dependent tasks exist).\n\n**Note:** `sparse_dates` keeps original task unlike in creation of single task with chain.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer", "format": "int64", "minimum": 1 }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/ChainGeneration" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Generated task chain (including the master task)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/Task" }
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      },
+      "put": {
+        "tags": ["Task Chains"],
+        "summary": "Propagate task chain",
+        "description": "Extends an existing task chain by generating new tasks after the latest existing task (or from an optional custom start date) using the master task's schedule. The schedule must already be defined on the master task.\n\nIf `start` is not provided, the generation starts from the latest `start_at` among existing chain tasks (excluding the master).",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer", "format": "int64", "minimum": 1 }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/ChainPropagation" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Extended task chain (all tasks, including existing and newly generated)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/Task" }
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
           "404": { "$ref": "#/components/responses/NotFound" }
         }
       }
@@ -181,6 +286,9 @@
             "type": "string",
             "format": "date-time",
             "example": "2026-03-24T00:01:00Z"
+          },
+          "chain_generation": {
+            "$ref": "#/components/schemas/ChainGeneration"
           }
         }
       },
@@ -210,6 +318,11 @@
             "type": "string",
             "format": "date-time",
             "example": "2026-03-24T00:01:00Z"
+          },
+          "make_standalone": {
+            "type": "boolean",
+            "description": "If true, the task is detached from its master task chain",
+            "example": false
           }
         }
       },
@@ -246,6 +359,87 @@
             "type": "string",
             "format": "date-time",
             "example": "2026-03-24T00:00:00Z"
+          },
+          "master_task_id": {
+            "type": "integer",
+            "format": "int64",
+            "description": "ID of the master task if this task belongs to a chain. If `null`, the task is a master task.",
+            "example": 5
+          },
+          "schedule": {
+            "$ref": "#/components/schemas/Schedule",
+            "description": "Recurrence schedule. Only present on master tasks."
+          }
+        }
+      },
+      "ChainGeneration": {
+        "type": "object",
+        "required": ["schedule"],
+        "properties": {
+          "schedule": {
+            "$ref": "#/components/schemas/Schedule"
+          },
+          "start": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Start of the generation window (inclusive). Defaults to current time.",
+            "example": "2026-04-01T00:00:00Z"
+          },
+          "end": {
+            "type": "string",
+            "format": "date-time",
+            "description": "End of the generation window (exclusive). Defaults to start + 3 months.",
+            "example": "2026-07-01T00:00:00Z"
+          }
+        }
+      },
+      "ChainPropagation": {
+        "type": "object",
+        "description": "Parameters for extending an existing task chain.",
+        "properties": {
+          "start": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Optional custom start date for generation. If not provided, generation starts from the latest `start_at` among existing chain tasks.",
+            "example": "2026-08-01T00:00:00Z"
+          },
+          "end": {
+            "type": "string",
+            "format": "date-time",
+            "description": "End of the generation window (exclusive). Defaults to `start` + 3 months if not provided.",
+            "example": "2026-11-01T00:00:00Z"
+          }
+        }
+      },
+      "Schedule": {
+        "type": "object",
+        "description": "Recurrence schedule for generating a task chain. Exactly one of the fields must be provided.",
+        "properties": {
+          "sparse_dates": {
+            "type": "array",
+            "items": { "type": "string", "format": "date-time" },
+            "description": "Generate tasks only on the specified dates (no workday filtering).",
+            "example": ["2026-04-15T00:00:00Z", "2026-05-01T00:00:00Z"]
+          },
+          "every_nth_day": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1,
+            "description": "Generate a task every N-th day (workdays only).",
+            "example": 3
+          },
+          "every_nth_monthday": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1,
+            "maximum": 31,
+            "description": "Generate a task on the N-th day of each month (workdays only).",
+            "example": 15
+          },
+          "every_even_day": {
+            "type": "boolean",
+            "description": "If true, generate tasks on even-numbered days; if false, on odd-numbered days (workdays only).",
+            "example": true
           }
         }
       },
