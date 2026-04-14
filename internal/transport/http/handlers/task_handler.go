@@ -168,3 +168,29 @@ func writeJSON(w http.ResponseWriter, status int, payload any) {
 
 	_ = json.NewEncoder(w).Encode(payload)
 }
+
+func generationInputFromDTO(i *chainGenerationMutationDTO) *taskusecase.GenerationInput {
+	if i == nil {
+		return nil
+	}
+	genReq := taskusecase.GenerationInput{}
+	if i.Start != nil {
+		genReq.Start = i.Start
+	}
+	if i.End != nil {
+		genReq.End = i.End
+	}
+	scheduleReq := taskusecase.ScheduleInput{}
+	switch {
+	case i.Schedule.EveryEvenDay != nil:
+		scheduleReq.EveryEvenDay = i.Schedule.EveryEvenDay
+	case i.Schedule.EveryNthDay != nil:
+		scheduleReq.EveryNthDay = i.Schedule.EveryNthDay
+	case i.Schedule.EveryNthMonthDay != nil:
+		scheduleReq.EveryNthMonthDay = i.Schedule.EveryNthMonthDay
+	case len(i.Schedule.SparseDates) > 0:
+		scheduleReq.SparseDates = i.Schedule.SparseDates
+	}
+	genReq.Schedule = scheduleReq
+	return &genReq
+}
