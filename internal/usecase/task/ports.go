@@ -15,6 +15,7 @@ type Repository interface {
 	List(ctx context.Context) ([]taskdomain.Task, error)
 	CreateBulk(ctx context.Context, tasks []taskdomain.Task) ([]taskdomain.Task, error)
 	GetByMasterID(ctx context.Context, id int64) ([]taskdomain.Task, error)
+	UpdateTitleAndDescriptionByMasterID(ctx context.Context, task *taskdomain.Task, filter *Filter) error
 }
 
 type Filter struct {

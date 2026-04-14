@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"errors"
+	"fmt"
 	"slices"
 	"time"
 
@@ -10,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	taskdomain "example.com/taskservice/internal/domain/task"
+	taskusecase "example.com/taskservice/internal/usecase/task"
 )
 
 type Repository struct {
@@ -205,6 +207,33 @@ func (r *Repository) CreateBulk(ctx context.Context, tasks []taskdomain.Task) ([
 	})
 
 	return createdTasks, nil
+}
+
+func (r *Repository) UpdateTitleAndDescriptionByMasterID(ctx context.Context, task *taskdomain.Task, filter *taskusecase.Filter) error {
+	query := `
+        UPDATE tasks
+        SET title = $1,
+            description = $2,
+            updated_at = $3
+        WHERE master_task_id = $4
+    `
+	args := []any{task.Title, task.Description, task.UpdatedAt, task.ID}
+
+	if filter != nil && filter.Status != nil && *filter.Status != taskdomain.Status("") {
+		query = string(fmt.Appendf([]byte(query), " AND status = $%d", len(args)+1))
+		args = append(args, filter.Status)
+	}
+
+	result, err := r.pool.Exec(ctx, query, args...)
+	if err != nil {
+		return err
+	}
+
+	if result.RowsAffected() == 0 {
+		return taskdomain.ErrNotFound
+	}
+
+	return nil
 }
 
 func (r *Repository) GetByMasterID(ctx context.Context, id int64) ([]taskdomain.Task, error) {

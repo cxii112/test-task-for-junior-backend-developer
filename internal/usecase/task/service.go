@@ -3,6 +3,7 @@ package task
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -175,6 +176,22 @@ func (s *Service) Update(ctx context.Context, id int64, input UpdateInput) (*tas
 	updated, err := s.repo.Update(ctx, model)
 	if err != nil {
 		return nil, err
+	}
+
+	chain, err := s.repo.GetByMasterID(ctx, id)
+	if err != nil {
+		slog.WarnContext(ctx, "error during updating dependent tasks", "error", err.Error(), "master_id", id)
+	}
+	if len(chain) <= 1 {
+		return updated, nil
+	}
+
+	status := taskdomain.StatusNew
+	err = s.repo.UpdateTitleAndDescriptionByMasterID(ctx, model, &Filter{
+		Status: &status,
+	})
+	if err != nil {
+		slog.WarnContext(ctx, "error during updating dependent tasks", "error", err.Error(), "master_id", id)
 	}
 
 	return updated, nil
