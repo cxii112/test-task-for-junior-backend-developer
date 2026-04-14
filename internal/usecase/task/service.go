@@ -302,6 +302,130 @@ func validateCreateInput(input CreateInput) (CreateInput, error) {
 	return input, nil
 }
 
+func (s *Service) CreateChainFromTask(ctx context.Context, id int64, input GenerationInput) ([]taskdomain.Task, error) {
+	if id <= 0 {
+		return nil, fmt.Errorf("%w: id must be positive", ErrInvalidInput)
+	}
+	normalized, err := validateCreateChainInput(input)
+	if err != nil {
+		return nil, err
+	}
+	master, err := s.repo.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	oldChain, err := s.repo.GetByMasterID(ctx, master.ID)
+	if err != nil {
+		return nil, err
+	}
+	if len(oldChain) > 1 {
+		return nil, fmt.Errorf("%w: all tasks must be unlinked from current task", ErrInvalidInput)
+	}
+	if len(oldChain) == 1 && oldChain[0].ID != id {
+		return nil, fmt.Errorf("%w: all tasks must be unlinked from current task", ErrInvalidInput)
+	}
+	now := s.now()
+	if master.MasterTaskId != nil {
+		master.MasterTaskId = nil
+	}
+	schedule := taskdomain.Schedule{}
+	switch {
+	case normalized.Schedule.SparseDates != nil:
+		schedule.SparseDates = normalized.Schedule.SparseDates
+	case normalized.Schedule.EveryEvenDay != nil:
+		schedule.EveryEvenDay = normalized.Schedule.EveryEvenDay
+	case normalized.Schedule.EveryNthDay != nil:
+		schedule.EveryNthDay = normalized.Schedule.EveryNthDay
+	case normalized.Schedule.EveryNthMonthDay != nil:
+		schedule.EveryNthMonthDay = normalized.Schedule.EveryNthMonthDay
+	}
+	opts := &taskdomain.GenerationOptions{
+		Now:            now,
+		WorkdayChecker: taskdomain.DefaultWorkdayChecker,
+	}
+	if normalized.Start != nil {
+		opts.GenerationStart = normalized.Start
+	} else {
+		opts.GenerationStart = &now
+	}
+	if normalized.End != nil {
+		opts.GenerationEnd = normalized.End
+	}
+	master.Schedule = &schedule
+	chain := taskdomain.NewChainFromMaster(*master, schedule, opts)
+	bulk, err := s.repo.CreateBulk(ctx, chain)
+	if err != nil {
+		return nil, err
+	}
+	updated, err := s.repo.Update(ctx, master)
+	if err != nil {
+		return nil, err
+	}
+	extended := make([]taskdomain.Task, len(bulk))
+	copy(extended, bulk)
+	extended = append(extended, *updated)
+	return extended, nil
+}
+
+func (s *Service) PropagateChain(ctx context.Context, id int64, input PropagationInput) ([]taskdomain.Task, error) {
+	if id <= 0 {
+		return nil, fmt.Errorf("%w: id must be positive", ErrInvalidInput)
+	}
+	target, err := s.repo.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if target.Schedule == nil {
+		return nil, fmt.Errorf("%w: can't propagate unscheduled task", ErrInvalidInput)
+	}
+	normalized, err := validatePropagateChainInput(input)
+	if err != nil {
+		return nil, err
+	}
+	chain, err := s.repo.GetByMasterID(ctx, id)
+	if len(chain) < 1 {
+		return nil, fmt.Errorf("%w: can't propagate empty chain", ErrInvalidInput)
+	}
+	var latestDate time.Time
+	now := s.now()
+	if normalized.Start != nil {
+		latestDate = *normalized.Start
+	}
+	for _, task := range chain {
+		if task.ID == id {
+			continue
+		}
+		if task.StartAt == nil {
+			continue
+		}
+		if !task.StartAt.After(latestDate) {
+			continue
+		}
+		latestDate = *task.StartAt
+	}
+
+	opts := &taskdomain.GenerationOptions{
+		Now:             now,
+		WorkdayChecker:  taskdomain.DefaultWorkdayChecker,
+		GenerationStart: &latestDate,
+	}
+	if normalized.End != nil {
+		opts.GenerationEnd = normalized.End
+	}
+
+	newChain := taskdomain.NewChainFromMaster(
+		*target,
+		*target.Schedule,
+		opts,
+	)
+	added, err := s.repo.CreateBulk(ctx, newChain)
+	if err != nil {
+		return nil, err
+	}
+	chain = append(chain, added...)
+	return chain, nil
+}
+
 func validateUpdateInput(input UpdateInput) (UpdateInput, error) {
 	input.Title = strings.TrimSpace(input.Title)
 	input.Description = strings.TrimSpace(input.Description)
@@ -331,5 +455,72 @@ func validateUpdateInput(input UpdateInput) (UpdateInput, error) {
 	}
 	input.StartAt = &startAt
 	input.Deadline = &deadline
+	return input, nil
+}
+
+func validateCreateChainInput(input GenerationInput) (GenerationInput, error) {
+	if input.End != nil && input.Start != nil &&
+		input.End.Before(*input.Start) {
+		return GenerationInput{}, fmt.Errorf("%w: deadline must be after start", ErrInvalidInput)
+	}
+	if input.Start != nil {
+		s := input.Start.UTC()
+		input.Start = &s
+	}
+	if input.End != nil {
+		e := input.End.UTC()
+		input.End = &e
+	}
+
+	fieldsCount := 0
+	if len(input.Schedule.SparseDates) > 0 {
+		fieldsCount += 1
+	}
+	if input.Schedule.EveryEvenDay != nil {
+		fieldsCount += 1
+	}
+	if input.Schedule.EveryNthDay != nil {
+		fieldsCount += 1
+	}
+	if input.Schedule.EveryNthMonthDay != nil {
+		fieldsCount += 1
+	}
+	if fieldsCount > 1 {
+		return GenerationInput{}, fmt.Errorf("%w: schedule input field are mutualy exclusive", ErrInvalidInput)
+	}
+	switch {
+	case input.Schedule.SparseDates != nil:
+		dates := map[int64]struct{}{}
+		for _, date := range input.Schedule.SparseDates {
+			unixDate := date.Unix()
+			_, exists := dates[unixDate]
+			if exists {
+				return GenerationInput{}, fmt.Errorf("%w: scheduled sparse dates must be unique", ErrInvalidInput)
+			}
+			dates[unixDate] = struct{}{}
+		}
+	case input.Schedule.EveryNthMonthDay != nil:
+		if *input.Schedule.EveryNthMonthDay > 31 {
+			return GenerationInput{}, fmt.Errorf("%w: scheduled every Nth month day must be in range from 1 to 31 inclusive", ErrInvalidInput)
+		}
+	}
+
+	return input, nil
+}
+
+func validatePropagateChainInput(input PropagationInput) (PropagationInput, error) {
+	if input.End != nil && input.Start != nil &&
+		input.End.Before(*input.Start) {
+		return PropagationInput{}, fmt.Errorf("%w: deadline must be after start", ErrInvalidInput)
+	}
+	if input.Start != nil {
+		s := input.Start.UTC()
+		input.Start = &s
+	}
+	if input.End != nil {
+		e := input.End.UTC()
+		input.End = &e
+	}
+
 	return input, nil
 }
