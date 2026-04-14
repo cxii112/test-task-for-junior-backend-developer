@@ -135,6 +135,9 @@ func (s *Service) Update(ctx context.Context, id int64, input UpdateInput) (*tas
 		Status:      normalized.Status,
 		UpdatedAt:   s.now(),
 	}
+	if target.Schedule != nil {
+		model.Schedule = target.Schedule
+	}
 	if target.MasterTaskId != nil {
 		model.MasterTaskId = target.MasterTaskId
 	}
