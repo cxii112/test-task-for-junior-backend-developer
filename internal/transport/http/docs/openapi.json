@@ -90,8 +90,8 @@
       },
       "put": {
         "tags": ["Tasks"],
-        "summary": "Update task",
-        "description": "Updates an existing task. If `deadline` is sent, `start_at` is also required. `deadline` must be after `start_at`.\n\n**Important:** Changing `start_at` or `deadline` will break the link to the master task (the task becomes standalone).\n\nSetting `make_standalone` to `true` explicitly removes the link to the master task.\n\nIf the task is a master task (has a schedule), updating its `title` or `description` will automatically propagate these changes to all dependent tasks with `status = new` in its chain.\n\n**Note:** The `chain_generation` field is ignored in update requests. To modify a task's schedule, use the chain endpoints (`POST /tasks/{id}/chain` to replace the chain or `PUT /tasks/{id}/chain` to propagate).\n\nThis endpoint cannot change the task's schedule.",
+        "summary": "Update task (without propagation)",
+        "description": "Updates an existing task. If `deadline` is sent, `start_at` is also required. `deadline` must be after `start_at`.\n\n**Important:** Changing `start_at` or `deadline` will break the link to the master task (the task becomes standalone).\n\nSetting `make_standalone` to `true` explicitly removes the link to the master task.\n\n**Note:** This endpoint does **not** propagate changes to dependent tasks. To update a master task and apply changes to its chain, use `PUT /tasks/{id}/chain`.\n\nThis endpoint cannot change the task's schedule.",
         "parameters": [
           {
             "name": "id",
@@ -204,7 +204,45 @@
       },
       "put": {
         "tags": ["Task Chains"],
-        "summary": "Propagate task chain",
+        "summary": "Update master task (title/description) and propagate to chain",
+        "description": "Updates the **title** and **description** of a master task and automatically applies these changes to all dependent tasks in its chain with `status = new`. Other fields (`status`, `start_at`, `deadline`, `schedule`) are **ignored**; `make_standalone` has no effect. The response returns the entire updated chain (master + all dependent tasks).\n\nTo change schedule, use `POST /tasks/{id}/chain` (replaces chain). To extend chain with new tasks, use `PUT /tasks/{id}/propagate`.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer", "format": "int64", "minimum": 1 }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/UpdateChainRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated task chain",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/Task" }
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/api/v1/tasks/{id}/propagate": {
+      "put": {
+        "tags": ["Task Chains"],
+        "summary": "Propagate task chain (extend)",
         "description": "Extends an existing task chain by generating new tasks after the latest existing task (or from an optional custom start date) using the master task's schedule. The schedule must already be defined on the master task.\n\nIf `start` is not provided, the generation starts from the latest `start_at` among existing chain tasks (excluding the master).\n\n**Field usage notes:**\n- For `sparse_dates` schedule: the `start` and `end` fields are **ignored**. The endpoint will generate all tasks from the `sparse_dates` list that have not yet been created (no filtering by date window).\n- For other schedule types: `start` and `end` define the generation window (only workdays within the window are considered). If `end` is omitted, it defaults to `start + 3 months`.",
         "parameters": [
           {
@@ -223,7 +261,7 @@
           }
         },
         "responses": {
-          "201": {
+          "200": {
             "description": "Extended task chain (all tasks, including existing and newly generated)",
             "content": {
               "application/json": {
@@ -323,6 +361,20 @@
             "type": "boolean",
             "description": "If true, the task is detached from its master task chain",
             "example": false
+          }
+        }
+      },
+      "UpdateChainRequest": {
+        "type": "object",
+        "description": "Request to update a master task's title and description and propagate to the chain.",
+        "properties": {
+          "title": {
+            "type": "string",
+            "example": "Prepare release (updated)"
+          },
+          "description": {
+            "type": "string",
+            "example": "Updated description"
           }
         }
       },

@@ -160,28 +160,7 @@ func (s *Service) Update(ctx context.Context, id int64, input UpdateInput) (*tas
 
 	}
 
-	updated, err := s.repo.Update(ctx, model)
-	if err != nil {
-		return nil, err
-	}
-
-	chain, err := s.repo.GetByMasterID(ctx, id)
-	if err != nil {
-		slog.WarnContext(ctx, "error during updating dependent tasks", "error", err.Error(), "master_id", id)
-	}
-	if len(chain) <= 1 {
-		return updated, nil
-	}
-
-	status := taskdomain.StatusNew
-	err = s.repo.UpdateTitleAndDescriptionByMasterID(ctx, model, &Filter{
-		Status: &status,
-	})
-	if err != nil {
-		slog.WarnContext(ctx, "error during updating dependent tasks", "error", err.Error(), "master_id", id)
-	}
-
-	return updated, nil
+	return s.repo.Update(ctx, model)
 }
 
 func (s *Service) Delete(ctx context.Context, id int64) error {
@@ -325,6 +304,67 @@ func (s *Service) PropagateChain(ctx context.Context, id int64, input Propagatio
 	}
 	chain = append(chain, added...)
 	return chain, nil
+}
+
+func (s *Service) UpdateChain(ctx context.Context, id int64, input UpdateChainInput) ([]taskdomain.Task, error) {
+	if id <= 0 {
+		return nil, fmt.Errorf("%w: id must be positive", ErrInvalidInput)
+	}
+
+	target, err := s.repo.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+
+	normalized, err := validateUpdateChainInput(input)
+	if err != nil {
+		return nil, err
+	}
+
+	model := &taskdomain.Task{
+		ID:          id,
+		Title:       normalized.Title,
+		Description: normalized.Description,
+		Status:      target.Status,
+		UpdatedAt:   s.now(),
+	}
+	if target.Schedule != nil {
+		model.Schedule = target.Schedule
+	}
+	if target.MasterTaskId != nil {
+		model.MasterTaskId = target.MasterTaskId
+	}
+	if target.Schedule != nil {
+		model.Schedule = target.Schedule
+	}
+
+	if target.StartAt != nil {
+		model.StartAt = target.StartAt
+	}
+	if target.Deadline == nil {
+		model.Deadline = target.Deadline
+	}
+
+	updated, err := s.repo.Update(ctx, model)
+	if err != nil {
+		return nil, err
+	}
+	chain, err := s.repo.GetByMasterID(ctx, id)
+	if err != nil {
+		slog.WarnContext(ctx, "error during updating dependent tasks", "error", err.Error(), "master_id", id)
+	}
+	if len(chain) <= 1 {
+		return []taskdomain.Task{*updated}, nil
+	}
+
+	status := taskdomain.StatusNew
+	err = s.repo.UpdateTitleAndDescriptionByMasterID(ctx, model, &Filter{
+		Status: &status,
+	})
+	if err != nil {
+		slog.WarnContext(ctx, "error during updating dependent tasks", "error", err.Error(), "master_id", id)
+	}
+	return s.repo.GetByMasterID(ctx, id)
 }
 
 func validateCreateInput(input CreateInput) (CreateInput, error) {
@@ -507,6 +547,17 @@ func validatePropagateChainInput(input PropagationInput) (PropagationInput, erro
 	if input.End != nil {
 		e := input.End.UTC()
 		input.End = &e
+	}
+
+	return input, nil
+}
+
+func validateUpdateChainInput(input UpdateChainInput) (UpdateChainInput, error) {
+	input.Title = strings.TrimSpace(input.Title)
+	input.Description = strings.TrimSpace(input.Description)
+
+	if input.Title == "" {
+		return UpdateChainInput{}, fmt.Errorf("%w: title is required", ErrInvalidInput)
 	}
 
 	return input, nil
