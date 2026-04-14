@@ -42,7 +42,7 @@
       "post": {
         "tags": ["Tasks"],
         "summary": "Create task",
-        "description": "Creates a new task. If `deadline` is sent, `start_at` is also required. `deadline` must be after `start_at`.\n\nIf `chain_generation` is provided, the created task becomes a **master task** with the given schedule, and a chain of recurring tasks is generated according to the schedule. The response contains the master task (the generated chain is stored but not returned directly).",
+        "description": "Creates a new task. If `deadline` is sent, `start_at` is also required. `deadline` must be after `start_at`.\n\nIf `chain_generation` is provided, the created task becomes a **master task** with the given schedule, and a chain of recurring tasks is generated according to the schedule. The response contains the master task (the generated chain is stored but not returned directly).\n\n**Field usage notes:**\n- For `sparse_dates` schedule: the `start` and `end` fields in `chain_generation` are **ignored** (generation window is not applied). Workday filtering is **not** performed.\n- For other schedule types (`every_nth_day`, `every_nth_monthday`, `every_even_day`): `start` and `end` define the generation window (inclusive-exclusive). Only workdays within the window are considered.\n- If `start` is omitted, it defaults to the current time. If `end` is omitted, it defaults to `start + 3 months`.",
         "requestBody": {
           "required": true,
           "content": {
@@ -91,7 +91,7 @@
       "put": {
         "tags": ["Tasks"],
         "summary": "Update task",
-        "description": "Updates an existing task. If `deadline` is sent, `start_at` is also required. `deadline` must be after `start_at`.\n\n**Important:** Changing `start_at` or `deadline` will break the link to the master task (the task becomes standalone).\n\nSetting `make_standalone` to `true` explicitly removes the link to the master task.\n\nIf the task is a master task (has a schedule), updating its `title` or `description` will automatically propagate these changes to all dependent tasks with `status = new` in its chain.\n\nThis endpoint cannot change the task's schedule.",
+        "description": "Updates an existing task. If `deadline` is sent, `start_at` is also required. `deadline` must be after `start_at`.\n\n**Important:** Changing `start_at` or `deadline` will break the link to the master task (the task becomes standalone).\n\nSetting `make_standalone` to `true` explicitly removes the link to the master task.\n\nIf the task is a master task (has a schedule), updating its `title` or `description` will automatically propagate these changes to all dependent tasks with `status = new` in its chain.\n\n**Note:** The `chain_generation` field is ignored in update requests. To modify a task's schedule, use the chain endpoints (`POST /tasks/{id}/chain` to replace the chain or `PUT /tasks/{id}/chain` to propagate).\n\nThis endpoint cannot change the task's schedule.",
         "parameters": [
           {
             "name": "id",
@@ -169,7 +169,7 @@
       "post": {
         "tags": ["Task Chains"],
         "summary": "Generate chain from a task",
-        "description": "Turns an existing task into a master task and generates a chain of recurring tasks based on the provided schedule. The original task is updated to become the master (its `master_task_id` is set to NULL and the schedule is attached).\n\nIf the task is already part of a chain (i.e., it has dependent tasks), the request fails unless the chain consists only of the task itself.\n\nThis endpoint works uniformly for all schedule types (including `sparse_dates`).",
+        "description": "Turns an existing task into a master task and generates a chain of recurring tasks based on the provided schedule. The original task is updated to become the master (its `master_task_id` is set to NULL and the schedule is attached).\n\nIf the task is already part of a chain (i.e., it has dependent tasks), the request fails unless the chain consists only of the task itself.\n\n**Field usage notes:**\n- For `sparse_dates` schedule: the `start` and `end` fields in the request body are **ignored** (generation window is not applied). Workday filtering is **not** performed.\n- For other schedule types (`every_nth_day`, `every_nth_monthday`, `every_even_day`): `start` and `end` define the generation window. Only workdays within the window are considered.\n- If `start` is omitted, it defaults to the current time. If `end` is omitted, it defaults to `start + 3 months`.",
         "parameters": [
           {
             "name": "id",
@@ -205,7 +205,7 @@
       "put": {
         "tags": ["Task Chains"],
         "summary": "Propagate task chain",
-        "description": "Extends an existing task chain by generating new tasks after the latest existing task (or from an optional custom start date) using the master task's schedule. The schedule must already be defined on the master task.\n\nIf `start` is not provided, the generation starts from the latest `start_at` among existing chain tasks (excluding the master).",
+        "description": "Extends an existing task chain by generating new tasks after the latest existing task (or from an optional custom start date) using the master task's schedule. The schedule must already be defined on the master task.\n\nIf `start` is not provided, the generation starts from the latest `start_at` among existing chain tasks (excluding the master).\n\n**Field usage notes:**\n- For `sparse_dates` schedule: the `start` and `end` fields are **ignored**. The endpoint will generate all tasks from the `sparse_dates` list that have not yet been created (no filtering by date window).\n- For other schedule types: `start` and `end` define the generation window (only workdays within the window are considered). If `end` is omitted, it defaults to `start + 3 months`.",
         "parameters": [
           {
             "name": "id",
@@ -382,13 +382,13 @@
           "start": {
             "type": "string",
             "format": "date-time",
-            "description": "Start of the generation window (inclusive). Defaults to current time.",
+            "description": "Start of the generation window (inclusive). Defaults to current time. **Ignored for `sparse_dates` schedule.**",
             "example": "2026-04-01T00:00:00Z"
           },
           "end": {
             "type": "string",
             "format": "date-time",
-            "description": "End of the generation window (exclusive). Defaults to start + 3 months.",
+            "description": "End of the generation window (exclusive). Defaults to `start + 3 months`. **Ignored for `sparse_dates` schedule.**",
             "example": "2026-07-01T00:00:00Z"
           }
         }
@@ -400,13 +400,13 @@
           "start": {
             "type": "string",
             "format": "date-time",
-            "description": "Optional custom start date for generation. If not provided, generation starts from the latest `start_at` among existing chain tasks.",
+            "description": "Optional custom start date for generation. If not provided, generation starts from the latest `start_at` among existing chain tasks. **Ignored for `sparse_dates` schedule.**",
             "example": "2026-08-01T00:00:00Z"
           },
           "end": {
             "type": "string",
             "format": "date-time",
-            "description": "End of the generation window (exclusive). Defaults to `start` + 3 months if not provided.",
+            "description": "End of the generation window (exclusive). Defaults to `start + 3 months` if not provided. **Ignored for `sparse_dates` schedule.**",
             "example": "2026-11-01T00:00:00Z"
           }
         }
@@ -418,14 +418,14 @@
           "sparse_dates": {
             "type": "array",
             "items": { "type": "string", "format": "date-time" },
-            "description": "Generate tasks only on the specified dates (no workday filtering).",
+            "description": "Generate tasks only on the specified dates (no workday filtering, no generation window).",
             "example": ["2026-04-15T00:00:00Z", "2026-05-01T00:00:00Z"]
           },
           "every_nth_day": {
             "type": "integer",
             "format": "int64",
             "minimum": 1,
-            "description": "Generate a task every N-th day (workdays only).",
+            "description": "Generate a task every N-th day (workdays only, respects generation window).",
             "example": 3
           },
           "every_nth_monthday": {
@@ -433,12 +433,12 @@
             "format": "int64",
             "minimum": 1,
             "maximum": 31,
-            "description": "Generate a task on the N-th day of each month (workdays only).",
+            "description": "Generate a task on the N-th day of each month (workdays only, respects generation window).",
             "example": 15
           },
           "every_even_day": {
             "type": "boolean",
-            "description": "If true, generate tasks on even-numbered days; if false, on odd-numbered days (workdays only).",
+            "description": "If true, generate tasks on even-numbered days; if false, on odd-numbered days (workdays only, respects generation window).",
             "example": true
           }
         }
