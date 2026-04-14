@@ -207,6 +207,37 @@ func (r *Repository) CreateBulk(ctx context.Context, tasks []taskdomain.Task) ([
 	return createdTasks, nil
 }
 
+func (r *Repository) GetByMasterID(ctx context.Context, id int64) ([]taskdomain.Task, error) {
+	const query = `
+		SELECT id, title, description, status, created_at, updated_at, start_at, deadline, master_task_id, schedule
+		FROM tasks
+		WHERE master_task_id = $1 OR id = $1
+		ORDER BY start_at DESC NULLS LAST, id DESC
+	`
+
+	rows, err := r.pool.Query(ctx, query, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	tasks := make([]taskdomain.Task, 0)
+	for rows.Next() {
+		task, err := scanTask(rows)
+		if err != nil {
+			return nil, err
+		}
+
+		tasks = append(tasks, *task)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return tasks, nil
+}
+
 type taskScanner interface {
 	Scan(dest ...any) error
 }

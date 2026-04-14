@@ -192,6 +192,13 @@ func (s *Service) List(ctx context.Context) ([]taskdomain.Task, error) {
 	return s.repo.List(ctx)
 }
 
+func (s *Service) GetChainByMasterID(ctx context.Context, id int64) ([]taskdomain.Task, error) {
+	if id <= 0 {
+		return nil, fmt.Errorf("%w: id must be positive", ErrInvalidInput)
+	}
+	return s.repo.GetByMasterID(ctx, id)
+}
+
 func validateCreateInput(input CreateInput) (CreateInput, error) {
 	input.Title = strings.TrimSpace(input.Title)
 	input.Description = strings.TrimSpace(input.Description)
