@@ -14,6 +14,12 @@ type Repository interface {
 	Delete(ctx context.Context, id int64) error
 	List(ctx context.Context) ([]taskdomain.Task, error)
 	CreateBulk(ctx context.Context, tasks []taskdomain.Task) ([]taskdomain.Task, error)
+	GetByMasterID(ctx context.Context, id int64) ([]taskdomain.Task, error)
+}
+
+type Filter struct {
+	Status *taskdomain.Status
+	// дополнительные фильтры добавятся по мере необходимости
 }
 
 type Usecase interface {
@@ -22,6 +28,7 @@ type Usecase interface {
 	Update(ctx context.Context, id int64, input UpdateInput) (*taskdomain.Task, error)
 	Delete(ctx context.Context, id int64) error
 	List(ctx context.Context) ([]taskdomain.Task, error)
+	GetChainByMasterID(ctx context.Context, id int64) ([]taskdomain.Task, error)
 }
 
 type CreateInput struct {
