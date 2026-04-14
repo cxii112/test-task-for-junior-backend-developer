@@ -30,6 +30,8 @@ type Usecase interface {
 	Delete(ctx context.Context, id int64) error
 	List(ctx context.Context) ([]taskdomain.Task, error)
 	GetChainByMasterID(ctx context.Context, id int64) ([]taskdomain.Task, error)
+	CreateChainFromTask(ctx context.Context, id int64, input GenerationInput) ([]taskdomain.Task, error)
+	PropagateChain(ctx context.Context, id int64, input PropagationInput) ([]taskdomain.Task, error)
 }
 
 type CreateInput struct {
@@ -64,4 +66,9 @@ type ScheduleInput struct {
 	EveryNthDay      *int64
 	EveryNthMonthDay *int64
 	EveryEvenDay     *bool
+}
+
+type PropagationInput struct {
+	Start *time.Time
+	End   *time.Time
 }
