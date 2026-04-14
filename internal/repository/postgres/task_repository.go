@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"errors"
+	"slices"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -145,6 +146,65 @@ func (r *Repository) List(ctx context.Context) ([]taskdomain.Task, error) {
 	}
 
 	return tasks, nil
+}
+
+func (r *Repository) CreateBulk(ctx context.Context, tasks []taskdomain.Task) ([]taskdomain.Task, error) {
+	if len(tasks) == 0 {
+		return []taskdomain.Task{}, nil
+	}
+
+	const query = `
+		INSERT INTO tasks (title, description, status, created_at, updated_at, start_at, deadline, master_task_id, schedule)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		RETURNING id, title, description, status, created_at, updated_at, start_at, deadline, master_task_id, schedule
+	`
+
+	batch := &pgx.Batch{}
+	for _, task := range tasks {
+		batch.Queue(query,
+			task.Title,
+			task.Description,
+			task.Status,
+			task.CreatedAt,
+			task.UpdatedAt,
+			task.StartAt,
+			task.Deadline,
+			task.MasterTaskId,
+			scheduleDAOFromModel(task.Schedule),
+		)
+	}
+
+	br := r.pool.SendBatch(ctx, batch)
+
+	createdTasks := make([]taskdomain.Task, 0, len(tasks))
+	for i := 0; i < len(tasks); i++ {
+		row := br.QueryRow()
+		task, err := scanTask(row)
+		if err != nil {
+			br.Close()
+			return nil, err
+		}
+		createdTasks = append(createdTasks, *task)
+	}
+
+	if err := br.Close(); err != nil {
+		return nil, err
+	}
+
+	slices.SortFunc(createdTasks, func(a, b taskdomain.Task) int {
+		if a.StartAt != nil && b.StartAt != nil {
+			return -a.StartAt.Compare(*b.StartAt)
+		}
+		if a.StartAt != nil && b.StartAt == nil {
+			return 1
+		}
+		if a.StartAt == nil && b.StartAt != nil {
+			return -1
+		}
+		return int(b.ID) - int(a.ID)
+	})
+
+	return createdTasks, nil
 }
 
 type taskScanner interface {
